@@ -1,10 +1,29 @@
 const crypto = require('crypto');
 
-function clean(text) {
+// Clean narration text
+function cleanText(text) {
     if (!text) return '';
-    return text.toLowerCase().trim();
+
+    return text
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '') // remove symbols
+        .replace(/\b(trf|from|mrs|mr|payment|received|ngn)\b/g, '') // remove noise words
+        .trim();
 }
 
+// Extract useful info from narration
+function extractInfo(narration) {
+    const cleaned = cleanText(narration);
+
+    const words = cleaned.split(' ').filter(Boolean);
+
+    return {
+        possible_name: words.slice(0, 2).join(' '), // first 2 words
+        raw: cleaned
+    };
+}
+
+// Fingerprint (unchanged)
 function roundTime(dateString) {
     const date = new Date(dateString);
     date.setSeconds(0, 0);
@@ -14,15 +33,15 @@ function roundTime(dateString) {
 function generateFingerprint(tx) {
     const base = `
         ${tx.amount}
-        ${clean(tx.sender_name)}
+        ${tx.sender_name?.toLowerCase().trim()}
         ${roundTime(tx.timestamp)}
-        ${clean(tx.narration)}
+        ${tx.narration?.toLowerCase().trim()}
     `;
 
     return crypto.createHash('sha256').update(base).digest('hex');
 }
 
-// API Parser (Paystack-style)
+// API parser
 function parseAPI(payload) {
     const data = payload.data;
 
@@ -39,7 +58,7 @@ function parseAPI(payload) {
     };
 }
 
-// SMS Parser
+// SMS parser
 function parseSMS(message, received_at) {
     const amountMatch = message.match(/NGN\s?([\d,]+)/i);
     const senderMatch = message.match(/from\s(.+?)(\/|$)/i);
@@ -63,5 +82,6 @@ function parseSMS(message, received_at) {
 module.exports = {
     parseAPI,
     parseSMS,
-    generateFingerprint
+    generateFingerprint,
+    extractInfo
 };
