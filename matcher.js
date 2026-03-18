@@ -1,6 +1,7 @@
-const Fuse = require('fuse.js');
 const db = require('./db');
+const { extractInfo } = require('./parser');
 
+// Load students
 function getStudents() {
     return new Promise((resolve, reject) => {
         db.all(`SELECT * FROM students`, [], (err, rows) => {
@@ -10,23 +11,40 @@ function getStudents() {
     });
 }
 
+// Match logic
 async function matchStudent(narration) {
     const students = await getStudents();
 
     if (!students.length) return null;
 
-    const fuse = new Fuse(students, {
-        keys: ['full_name', 'aliases'],
-        threshold: 0.4
-    });
+    const extracted = extractInfo(narration);
 
-    const result = fuse.search(narration);
+    const name = extracted.possible_name;
 
-    if (result.length > 0) {
-        return {
-            student_id: result[0].item.id,
-            confidence: 1 - result[0].score
-        };
+    for (let student of students) {
+        const full = student.full_name.toLowerCase();
+
+        // Direct match
+        if (full.includes(name)) {
+            return {
+                student_id: student.id,
+                confidence: 0.9
+            };
+        }
+
+        // Alias match
+        if (student.aliases) {
+            const aliases = JSON.parse(student.aliases);
+
+            for (let alias of aliases) {
+                if (name.includes(alias.toLowerCase())) {
+                    return {
+                        student_id: student.id,
+                        confidence: 0.8
+                    };
+                }
+            }
+        }
     }
 
     return null;
