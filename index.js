@@ -43,140 +43,33 @@ app.get('/transactions', (req, res) => {
 // WEBHOOK (PAYSTACK / MONO)
 // ===============================
 app.post('/webhook', async (req, res) => {
-    try {
-        const tx = parseAPI(req.body);
+  try {
+    console.log("RAW BODY:", req.body);
 
-        // Generate fingerprint
-        const fingerprint = generateFingerprint(tx);
+    const payload = req.body.data || req.body;
 
-        // Check duplicate
-        db.get(
-            `SELECT * FROM transactions WHERE fingerprint = ?`,
-            [fingerprint],
-            async (err, existing) => {
-                if (existing) {
-                    console.log('Duplicate transaction ignored');
-                    return res.json({ status: 'duplicate' });
-                }
-
-                // Match student
-                const match = await matchStudent(tx.narration);
-
-                const status = match ? 'matched' : 'unmatched';
-                const student_id = match ? match.student_id : null;
-
-                // Insert transaction
-                db.run(
-                    `INSERT INTO transactions 
-                    (amount, sender_name, narration, transaction_time, source_type, source_id, fingerprint, raw_payload, status, student_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [
-                        tx.amount,
-                        tx.sender_name,
-                        tx.narration,
-                        tx.timestamp,
-                        tx.source_type,
-                        tx.source_id,
-                        fingerprint,
-                        tx.raw_payload,
-                        status,
-                        student_id
-                    ],
-                    function (err) {
-                        if (err) {
-                            console.error(err);
-                            return res.status(500).json({ error: 'Insert failed' });
-                        }
-
-                        console.log('Transaction saved:', tx.amount, status);
-
-                        res.json({
-                            status,
-                            transaction_id: this.lastID
-                        });
-                    }
-                );
-            }
-        );
-    } catch (error) {
-        console.error(error);
-        res.status(400).json({ error: 'Invalid webhook data' });
+    if (!payload) {
+      return res.status(400).json({ error: "No payload received" });
     }
-});
 
+    const transaction = {
+      amount: payload.amount,
+      sender_name: `${payload.customer?.first_name || ""} ${payload.customer?.last_name || ""}`.trim(),
+      narration: payload.metadata?.narration || "No narration",
+      transaction_time: payload.paid_at || new Date().toISOString(),
+      source_type: "API",
+      source_id: payload.reference
+    };
 
-// ===============================
-// SMS ENDPOINT (ANDROID GATEWAY)
-// ===============================
-app.post('/sms', async (req, res) => {
-    try {
-        const { message, received_at } = req.body;
+    console.log("NORMALIZED:", transaction);
 
-        if (!message) {
-            return res.status(400).json({ error: 'No SMS message provided' });
-        }
+    res.json({
+      status: "success",
+      data: transaction
+    });
 
-        const tx = parseSMS(message, received_at || new Date().toISOString());
-
-        const fingerprint = generateFingerprint(tx);
-
-        // Check duplicate
-        db.get(
-            `SELECT * FROM transactions WHERE fingerprint = ?`,
-            [fingerprint],
-            async (err, existing) => {
-                if (existing) {
-                    console.log('Duplicate SMS ignored');
-                    return res.json({ status: 'duplicate' });
-                }
-
-                const match = await matchStudent(tx.narration);
-
-                const status = match ? 'matched' : 'unmatched';
-                const student_id = match ? match.student_id : null;
-
-                db.run(
-                    `INSERT INTO transactions 
-                    (amount, sender_name, narration, transaction_time, source_type, source_id, fingerprint, raw_payload, status, student_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [
-                        tx.amount,
-                        tx.sender_name,
-                        tx.narration,
-                        tx.timestamp,
-                        tx.source_type,
-                        null,
-                        fingerprint,
-                        tx.raw_payload,
-                        status,
-                        student_id
-                    ],
-                    function (err) {
-                        if (err) {
-                            console.error(err);
-                            return res.status(500).json({ error: 'Insert failed' });
-                        }
-
-                        console.log('SMS Transaction saved:', tx.amount, status);
-
-                        res.json({
-                            status,
-                            transaction_id: this.lastID
-                        });
-                    }
-                );
-            }
-        );
-    } catch (error) {
-        console.error(error);
-        res.status(400).json({ error: 'Invalid SMS data' });
-    }
-});
-
-
-// ===============================
-// START SERVER
-// ===============================
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  } catch (error) {
+    console.error("WEBHOOK ERROR:", error);
+    res.status(500).json({ error: "Server error" });
+  }
 });
