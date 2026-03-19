@@ -20,9 +20,9 @@ app.get('/', (req, res) => {
 // ---------------------------
 // Webhook route
 // ---------------------------
-app.post('/webhook', async (req, res) => {
+app.post('/webhook',async (req, res) => {
   try {
-    console.log("RAW BODY:", req.body);
+    console.log("RAW BODY:", req.body;
 
     // Accept both data formats
     const payload = req.body.data || req.body;
